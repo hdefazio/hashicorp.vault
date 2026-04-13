@@ -10,11 +10,13 @@ __metaclass__ = type
 DOCUMENTATION = """
 ---
 module: database_role_info
-short_description: Read HashiCorp Vault database dynamic role configuration
+short_description: List available dynamic roles or read configuration for a specific role
 version_added: 1.2.0
 author: Matthew Johnson (@mjohns91)
 description:
-  - Read the configuration of dynamic roles in HashiCorp Vault Database Secrets Engine.
+  - This module retrieves configuration details for a specific Vault database dynamic role.
+  - When a role name is provided, it returns its full configuration; if the name is omitted,
+    the module returns a comprehensive list of all available dynamic roles within the specified mount path.
   - This module is read-only and does not modify role configuration.
 options:
   mount_path:
@@ -23,18 +25,25 @@ options:
     type: str
   role_name:
     description: Name of the dynamic role to read.
-    required: true
+    required: false
     type: str
 extends_documentation_fragment:
   - hashicorp.vault.vault_auth.modules
 """
 
 EXAMPLES = """
-- name: Read a dynamic role configuration with token authentication
+- name: List all available dynamic roles
+  hashicorp.vault.database_role_info:
+    url: https://vault.example.com:8200
+    token: "{{ vault_token }}"
+  register: all_roles
+
+- name: Read a specific dynamic role configuration with token authentication
   hashicorp.vault.database_role_info:
     url: https://vault.example.com:8200
     token: "{{ vault_token }}"
     role_name: readonly
+  register: role_config
 
 - name: Read a dynamic role configuration with AppRole authentication
   hashicorp.vault.database_role_info:
@@ -47,23 +56,30 @@ EXAMPLES = """
 
 - name: Display role configuration
   ansible.builtin.debug:
-    var: role_config.role
+    var: role_config.roles
 """
 
 RETURN = """
-role:
-  description: The dynamic role configuration data when the role exists.
-  returned: when the role exists
-  type: dict
+roles:
+  description: The list of database dynamic roles.
+  returned: always
+  type: list
   sample:
-    db_name: "my-postgres-db"
-    creation_statements:
-      - "CREATE ROLE '{{name}}' WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';"
-      - "GRANT SELECT ON ALL TABLES IN SCHEMA public TO '{{name}}';"
-    default_ttl: 3600
-    max_ttl: 86400
-    revocation_statements:
-      - "DROP ROLE IF EXISTS '{{name}}';"
+    [
+        {
+            "name": "readonly",
+            "db_name": "my-postgres-db",
+            "creation_statements": [
+                "CREATE ROLE '{{name}}' WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';",
+                "GRANT SELECT ON ALL TABLES IN SCHEMA public TO '{{name}}';"
+            ],
+            "default_ttl": 3600,
+            "max_ttl": 86400,
+            "revocation_statements": [
+                "DROP ROLE IF EXISTS '{{name}}';"
+            ]
+        }
+    ]
 """
 
 import copy
@@ -94,7 +110,7 @@ def main():
         dict(
             # Role parameters
             mount_path=dict(type='str', default='database'),
-            role_name=dict(type='str', required=True),
+            role_name=dict(type='str', required=False),
         )
     )
 
@@ -111,11 +127,16 @@ def main():
 
     try:
         db_roles = VaultDatabaseDynamicRoles(client, mount_path)
-        result = db_roles.read_dynamic_role(role_name)
-        module.exit_json(role=result)
+        if role_name:
+            data = db_roles.read_dynamic_role(role_name)
+            data.update({'name': role_name})
+            roles = [data]
+        else:
+            roles = [{'name': name} for name in db_roles.list_dynamic_roles() or []]
+        module.exit_json(roles=roles)
 
     except VaultSecretNotFoundError:
-        module.exit_json(role={})
+        module.exit_json(roles=[])
     except VaultPermissionError as e:
         module.fail_json(msg=f'Permission denied: {e}')
     except VaultApiError as e:

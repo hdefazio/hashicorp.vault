@@ -69,7 +69,7 @@
       ansible.builtin.assert:
         that:
           - create_check_mode is changed
-          - role_info.role == {}
+          - role_info.roles == []
 
     # Create database role
     - name: Create database role
@@ -92,9 +92,10 @@
       ansible.builtin.assert:
         that:
           - create_role is changed
-          - role_info.role.db_name == test_db_connection
-          - role_info.role.default_ttl == 3600
-          - role_info.role.max_ttl == 86400
+          - role_info.roles | length == 1
+          - role_info.roles[0].db_name == test_db_connection
+          - role_info.roles[0].default_ttl == 3600
+          - role_info.roles[0].max_ttl == 86400
 
     # Read role info in check mode
     - name: Read role in check mode
@@ -107,8 +108,34 @@
     - name: Validate check mode returns same data
       ansible.builtin.assert:
         that:
-          - role_info_check_mode.role == role_info.role
+          - role_info_check_mode.roles == role_info.roles
           - role_info_check_mode is not changed
+
+    # List all dynamic roles (without role_name parameter)
+    - name: List all dynamic roles
+      hashicorp.vault.database_role_info:
+        mount_path: "{{ vault_database_mount_path }}"
+      register: all_roles
+
+    - name: Validate that our test role appears in the list
+      ansible.builtin.assert:
+        that:
+          - all_roles.roles | length > 0
+          - all_roles.roles | selectattr('name', 'equalto', test_role_name) | list | length == 1
+          - all_roles is not changed
+
+    # List all dynamic roles in check mode
+    - name: List all dynamic roles in check mode
+      hashicorp.vault.database_role_info:
+        mount_path: "{{ vault_database_mount_path }}"
+      check_mode: true
+      register: all_roles_check_mode
+
+    - name: Validate check mode returns same data for list
+      ansible.builtin.assert:
+        that:
+          - all_roles_check_mode.roles == all_roles.roles
+          - all_roles_check_mode is not changed
 
     # Create database role (idempotency)
     - name: Create database role again (idempotency)
@@ -149,7 +176,7 @@
       ansible.builtin.assert:
         that:
           - update_check_mode is changed
-          - role_info.role.revocation_statements is not defined or role_info.role.revocation_statements | length == 0
+          - role_info.roles[0].revocation_statements is not defined or role_info.roles[0].revocation_statements | length == 0
 
     # Update database role
     - name: Update database role with revocation statements
@@ -173,7 +200,7 @@
       ansible.builtin.assert:
         that:
           - update_role is changed
-          - role_info.role.revocation_statements | length == 1
+          - role_info.roles[0].revocation_statements | length == 1
 
     # Update database role (idempotency)
     - name: Update database role again (idempotency)
@@ -211,7 +238,7 @@
       ansible.builtin.assert:
         that:
           - delete_check_mode is changed
-          - role_info.role != {}
+          - role_info.roles | length > 0
 
     # Delete database role
     - name: Delete database role
@@ -231,7 +258,7 @@
       ansible.builtin.assert:
         that:
           - delete_role is changed
-          - role_info.role == {}
+          - role_info.roles == []
 
     # Delete database role (idempotency)
     - name: Delete database role again (idempotency)

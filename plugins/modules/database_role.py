@@ -11,7 +11,7 @@ DOCUMENTATION = """
 ---
 module: database_role
 short_description: Manage HashiCorp Vault database dynamic roles
-version_added: 1.1.0
+version_added: 1.2.0
 author: Matthew Johnson (@mjohns91)
 description:
   - Create, update, or delete dynamic roles in HashiCorp Vault Database Secrets Engine.

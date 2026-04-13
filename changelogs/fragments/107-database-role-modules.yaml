@@ -1,10 +1,11 @@
 ---
 minor_changes:
-  - database_role - New module to manage HashiCorp Vault database dynamic roles
+  - database_role - new module to manage HashiCorp Vault database dynamic roles
     with support for creating, updating, and deleting role configurations including
     creation statements, revocation statements, and TTL settings
     (https://github.com/ansible-collections/hashicorp.vault/pull/107).
-  - database_role_info - New module to read HashiCorp Vault database dynamic role
-    configurations. Returns role details including database connection name, SQL
-    statements, and TTL values
+  - database_role_info - new module to read HashiCorp Vault database dynamic role
+    configurations or list all available roles. When a role name is provided, returns
+    role details including database connection name, SQL statements, and TTL values.
+    When role name is omitted, returns a list of all dynamic role names
     (https://github.com/ansible-collections/hashicorp.vault/pull/107).
