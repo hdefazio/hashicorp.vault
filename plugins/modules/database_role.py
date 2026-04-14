@@ -4,6 +4,7 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
+from typing import Any, Dict
 
 __metaclass__ = type
 
@@ -39,7 +40,7 @@ options:
     description:
       - SQL statements to execute when creating database credentials.
       - Required when O(state=present).
-      - Supports templating with C({{name}}), C({{password}}), and C({{expiration}}).
+      - Supports templating with V({{name}}), V({{password}}), and V({{expiration}}).
     type: list
     elements: str
   default_ttl:
@@ -61,8 +62,9 @@ options:
     type: list
     elements: str
   credential_type:
-    description: Type of credential to generate (e.g., "password", "rsa_private_key").
+    description: Type of credential to generate.
     type: str
+    choices: ['password', 'rsa_private_key', 'client_certificate']
   credential_config:
     description: Additional configuration for credential generation.
     type: dict
@@ -142,11 +144,14 @@ try:
     from ansible_collections.hashicorp.vault.plugins.module_utils.vault_auth_utils import (
         get_authenticated_client,
     )
-    from ansible_collections.hashicorp.vault.plugins.module_utils.vault_database import VaultDatabaseDynamicRoles
+    from ansible_collections.hashicorp.vault.plugins.module_utils.vault_database import (
+        VaultDatabaseDynamicRoles,
+        build_optional_params,
+        get_existing_role_or_none,
+    )
     from ansible_collections.hashicorp.vault.plugins.module_utils.vault_exceptions import (
         VaultApiError,
         VaultPermissionError,
-        VaultSecretNotFoundError,
     )
 
 except ImportError as e:
@@ -175,17 +180,13 @@ def ensure_role_present(module: AnsibleModule, db_roles: VaultDatabaseDynamicRol
         'credential_type',
         'credential_config',
     ]
+    config.update(build_optional_params(module.params, optional_params))
 
-    for param in optional_params:
-        value = module.params.get(param)
-        if value is not None:
-            config[param] = value
+    # Check if role already exists
+    existing_role = get_existing_role_or_none(db_roles, role_name, 'read_dynamic_role')
 
-    # Try to read existing role to check for changes
-    try:
-        existing_role = db_roles.read_dynamic_role(role_name)
-
-        # Check if the role configuration matches
+    if existing_role:
+        # Role exists - check if the configuration matches
         if _role_config_matches(existing_role, config):
             # Role already exists with the same configuration - no changes needed
             module.exit_json(
@@ -196,8 +197,7 @@ def ensure_role_present(module: AnsibleModule, db_roles: VaultDatabaseDynamicRol
             # Configuration is different, proceed with update
             action_msg = 'Role updated successfully'
             changed = True
-
-    except VaultSecretNotFoundError:
+    else:
         # Role doesn't exist, proceed with creation
         action_msg = 'Role created successfully'
         changed = True
@@ -215,17 +215,16 @@ def ensure_role_present(module: AnsibleModule, db_roles: VaultDatabaseDynamicRol
 def ensure_role_absent(module: AnsibleModule, db_roles: VaultDatabaseDynamicRoles) -> None:
     """Ensure the dynamic role is deleted."""
     role_name = module.params['role_name']
-    changed = False
 
     # Check if the role exists
-    try:
-        db_roles.read_dynamic_role(role_name)
-        # Role exists, needs to be deleted
-        changed = True
+    existing_role = get_existing_role_or_none(db_roles, role_name, 'read_dynamic_role')
 
-    except VaultSecretNotFoundError:
+    if not existing_role:
         # Role doesn't exist, already in desired state
-        module.exit_json(changed=changed, msg='Role already absent')
+        module.exit_json(changed=False, msg='Role already absent')
+
+    # Role exists, needs to be deleted
+    changed = True
 
     # If in check mode, exit here with what would happen
     if module.check_mode:
@@ -236,7 +235,22 @@ def ensure_role_absent(module: AnsibleModule, db_roles: VaultDatabaseDynamicRole
     module.exit_json(changed=changed, msg='Role deleted successfully', data={})
 
 
-def _role_config_matches(existing: dict, desired: dict) -> bool:
+def _normalize_value(value: Any) -> Any:
+    """
+    Normalize a value for comparison by converting string numbers to integers.
+
+    Args:
+        value: The value to normalize
+
+    Returns:
+        Normalized value (int if it's a numeric string, otherwise original value)
+    """
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return value
+
+
+def _role_config_matches(existing: Dict[str, Any], desired: Dict[str, Any]) -> bool:
     """
     Compare existing role configuration with desired configuration.
 
@@ -255,13 +269,17 @@ def _role_config_matches(existing: dict, desired: dict) -> bool:
         if value is None:
             continue
 
-        # For lists, compare as sets to handle ordering differences
+        # For lists (e.g., SQL statements), compare directly to preserve order
+        # Order matters for SQL execution (e.g., CREATE USER before GRANT)
         if isinstance(value, list) and isinstance(existing_value, list):
-            if set(value) != set(existing_value):
+            if value != existing_value:
                 return False
-        # For other types, direct comparison
-        elif existing_value != value:
-            return False
+        # For other types, normalize and compare to handle int/string differences
+        else:
+            normalized_existing = _normalize_value(existing_value)
+            normalized_desired = _normalize_value(value)
+            if normalized_existing != normalized_desired:
+                return False
 
     return True
 
@@ -281,8 +299,8 @@ def main():
             revocation_statements=dict(type='list', elements='str'),
             rollback_statements=dict(type='list', elements='str'),
             renew_statements=dict(type='list', elements='str'),
-            credential_type=dict(type='str'),
-            credential_config=dict(type='dict'),
+            credential_type=dict(type='str', choices=['password', 'rsa_private_key', 'client_certificate']),
+            credential_config=dict(type='dict', no_log=True),
             # Other parameters
             state=dict(type='str', choices=['present', 'absent'], default='present'),
         )

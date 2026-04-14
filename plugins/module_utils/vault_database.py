@@ -22,6 +22,62 @@ from ansible_collections.hashicorp.vault.plugins.module_utils.vault_exceptions i
 )
 
 
+def build_optional_params(params: Dict[str, Any], param_names: List[str]) -> Dict[str, Any]:
+    """
+    Build a dictionary of optional parameters, excluding None values.
+
+    This utility function filters a set of parameters from a source dictionary,
+    returning only those parameters that have non-None values. This is useful
+    when building configuration payloads for Vault API calls where None values
+    should be omitted rather than sent as null.
+
+    Args:
+        params: Source dictionary containing parameter values (e.g., module.params).
+        param_names: List of parameter names to extract from params.
+
+    Returns:
+        Dictionary containing only the parameters from param_names that have
+        non-None values in params.
+
+    Example:
+        >>> module_params = {'max_ttl': 3600, 'default_ttl': None, 'db_name': 'mydb'}
+        >>> optional = build_optional_params(module_params, ['max_ttl', 'default_ttl'])
+        >>> optional
+        {'max_ttl': 3600}
+    """
+    return {k: params[k] for k in param_names if params.get(k) is not None}
+
+
+def get_existing_role_or_none(role_client, role_name: str, read_method: str) -> Optional[Dict[str, Any]]:
+    """
+    Attempt to read a role configuration, returning None if it doesn't exist.
+
+    This helper function provides a consistent pattern for checking role existence
+    across database role modules (both dynamic and static roles). It abstracts the
+    try/except VaultSecretNotFoundError pattern into a reusable utility.
+
+    Args:
+        role_client: The role client instance (e.g., VaultDatabaseDynamicRoles or VaultDatabaseStaticRoles).
+        role_name: Name of the role to read.
+        read_method: Name of the read method to call on the role_client (e.g., 'read_dynamic_role' or 'read_static_role').
+
+    Returns:
+        Role configuration dictionary if the role exists, None if it doesn't exist.
+
+    Example:
+        >>> db_roles = VaultDatabaseDynamicRoles(client, mount_path='database')
+        >>> existing = get_existing_role_or_none(db_roles, 'my-role', 'read_dynamic_role')
+        >>> if existing:
+        ...     print(f"Role exists with config: {existing}")
+        ... else:
+        ...     print("Role does not exist")
+    """
+    try:
+        return getattr(role_client, read_method)(role_name)
+    except VaultSecretNotFoundError:
+        return None
+
+
 class VaultDatabaseParent:
     """
     Base class for Vault Database Secrets Engine client classes.
