@@ -161,8 +161,6 @@ except ImportError as e:
 def ensure_role_present(module: AnsibleModule, db_roles: VaultDatabaseDynamicRoles) -> None:
     """Ensure the dynamic role exists with the specified configuration by creating or updating it."""
     role_name = module.params['role_name']
-    changed = True
-    action_msg = 'Role created successfully'
 
     # Build configuration dict from module parameters
     config = {
@@ -193,23 +191,22 @@ def ensure_role_present(module: AnsibleModule, db_roles: VaultDatabaseDynamicRol
                 changed=False,
                 msg='Role already exists with the same configuration',
             )
-        else:
-            # Configuration is different, proceed with update
-            action_msg = 'Role updated successfully'
-            changed = True
+        # Configuration is different, proceed with update
+        action = 'update'
+        action_msg = 'Role updated successfully'
     else:
         # Role doesn't exist, proceed with creation
+        action = 'create'
         action_msg = 'Role created successfully'
-        changed = True
 
     # If in check mode, exit here with what would happen
     if module.check_mode:
-        module.exit_json(changed=changed, msg=f'Would have {action_msg.split()[1]} the role if not in check_mode.')
+        module.exit_json(changed=True, msg=f'Would have {action}d the role if not in check_mode.')
 
     # Create or update the role
     result = db_roles.create_or_update_dynamic_role(role_name, config)
 
-    module.exit_json(changed=changed, msg=action_msg, raw=result)
+    module.exit_json(changed=True, msg=action_msg, raw=result)
 
 
 def ensure_role_absent(module: AnsibleModule, db_roles: VaultDatabaseDynamicRoles) -> None:

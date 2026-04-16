@@ -15,7 +15,7 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from ansible_collections.hashicorp.vault.plugins.module_utils.vault_exceptions import (
     VaultConfigurationError,
@@ -49,7 +49,9 @@ def build_optional_params(params: Dict[str, Any], param_names: List[str]) -> Dic
     return {k: params[k] for k in param_names if params.get(k) is not None}
 
 
-def get_existing_role_or_none(role_client, role_name: str, read_method: str) -> Optional[Dict[str, Any]]:
+def get_existing_role_or_none(
+    role_client, role_name: str, read_method: Literal['read_dynamic_role', 'read_static_role']
+) -> Optional[Dict[str, Any]]:
     """
     Attempt to read a role configuration, returning None if it doesn't exist.
 
@@ -60,10 +62,14 @@ def get_existing_role_or_none(role_client, role_name: str, read_method: str) -> 
     Args:
         role_client: The role client instance (e.g., VaultDatabaseDynamicRoles or VaultDatabaseStaticRoles).
         role_name: Name of the role to read.
-        read_method: Name of the read method to call on the role_client (e.g., 'read_dynamic_role' or 'read_static_role').
+        read_method: Name of the read method to call on the role_client.
+                     Must be either 'read_dynamic_role' or 'read_static_role'.
 
     Returns:
         Role configuration dictionary if the role exists, None if it doesn't exist.
+
+    Raises:
+        ValueError: If read_method is not one of the allowed values.
 
     Example:
         >>> db_roles = VaultDatabaseDynamicRoles(client, mount_path='database')
@@ -73,6 +79,11 @@ def get_existing_role_or_none(role_client, role_name: str, read_method: str) -> 
         ... else:
         ...     print("Role does not exist")
     """
+    # Allowlist of valid read methods for security
+    allowed_methods = {'read_dynamic_role', 'read_static_role'}
+    if read_method not in allowed_methods:
+        raise ValueError(f"Invalid read_method '{read_method}'. Must be one of: {', '.join(sorted(allowed_methods))}")
+
     try:
         return getattr(role_client, read_method)(role_name)
     except VaultSecretNotFoundError:

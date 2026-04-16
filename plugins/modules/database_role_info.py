@@ -92,11 +92,13 @@ try:
     from ansible_collections.hashicorp.vault.plugins.module_utils.vault_auth_utils import (
         get_authenticated_client,
     )
-    from ansible_collections.hashicorp.vault.plugins.module_utils.vault_database import VaultDatabaseDynamicRoles
+    from ansible_collections.hashicorp.vault.plugins.module_utils.vault_database import (
+        VaultDatabaseDynamicRoles,
+        get_existing_role_or_none,
+    )
     from ansible_collections.hashicorp.vault.plugins.module_utils.vault_exceptions import (
         VaultApiError,
         VaultPermissionError,
-        VaultSecretNotFoundError,
     )
 
 except ImportError as e:
@@ -128,15 +130,15 @@ def main():
     try:
         db_roles = VaultDatabaseDynamicRoles(client, mount_path)
         if role_name:
-            data = db_roles.read_dynamic_role(role_name)
+            data = get_existing_role_or_none(db_roles, role_name, 'read_dynamic_role')
+            if data is None:
+                module.exit_json(roles=[])
             data.update({'name': role_name})
             roles = [data]
         else:
-            roles = [{'name': name} for name in db_roles.list_dynamic_roles() or []]
+            roles = [{'name': name} for name in db_roles.list_dynamic_roles()]
         module.exit_json(roles=roles)
 
-    except VaultSecretNotFoundError:
-        module.exit_json(roles=[])
     except VaultPermissionError as e:
         module.fail_json(msg=f'Permission denied: {e}')
     except VaultApiError as e:
