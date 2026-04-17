@@ -9,7 +9,6 @@ __metaclass__ = type
 
 import json  # noqa: F401
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
@@ -85,7 +84,7 @@ class VaultClient:
         self,
         vault_address: str,
         vault_namespace: str,
-        ca_certificate: Optional[Path] = None,
+        ca_certificate: Optional[str] = None,
         tls_skip_verify: bool = None,
     ) -> None:
         """
@@ -97,7 +96,7 @@ class VaultClient:
         Args:
             vault_address (str): The Vault server address (e.g., "https://vault.example.com:8200")
             vault_namespace (str): Vault Enterprise namespace (use "root" for OSS Vault)
-            ca_certificate (Path): The optional to a custom certificate.
+            ca_certificate (str): Path to an optional custom CA certificate file.
             tls_skip_verify (bool): When set to true, skip tls verification.
 
         Raises:
