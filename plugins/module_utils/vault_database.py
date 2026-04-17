@@ -23,14 +23,17 @@ from ansible_collections.hashicorp.vault.plugins.module_utils.vault_exceptions i
 )
 
 
-def build_optional_params(params: Dict[str, Any], param_names: List[str]) -> Dict[str, Any]:
+def build_config_params(params: Dict[str, Any], param_names: List[str]) -> Dict[str, Any]:
     """
-    Build a dictionary of optional parameters, excluding None values.
+    Build a configuration dictionary from specified parameters, excluding None values.
 
-    This utility function filters a set of parameters from a source dictionary,
+    This utility function extracts a set of parameters from a source dictionary,
     returning only those parameters that have non-None values. This is useful
     when building configuration payloads for Vault API calls where None values
     should be omitted rather than sent as null.
+
+    Works for both required and optional parameters - any parameter with a non-None
+    value will be included in the returned dictionary.
 
     Args:
         params: Source dictionary containing parameter values (e.g., module.params).
@@ -41,12 +44,12 @@ def build_optional_params(params: Dict[str, Any], param_names: List[str]) -> Dic
         non-None values in params.
 
     Example:
-        >>> module_params = {'max_ttl': 3600, 'default_ttl': None, 'db_name': 'mydb'}
-        >>> optional = build_optional_params(module_params, ['max_ttl', 'default_ttl'])
-        >>> optional
-        {'max_ttl': 3600}
+        >>> module_params = {'db_name': 'mydb', 'max_ttl': 3600, 'default_ttl': None}
+        >>> config = build_config_params(module_params, ['db_name', 'max_ttl', 'default_ttl'])
+        >>> config
+        {'db_name': 'mydb', 'max_ttl': 3600}
     """
-    return {k: params[k] for k in param_names if params.get(k) is not None}
+    return {k: v for k in param_names if (v := params.get(k)) is not None}
 
 
 def get_existing_role_or_none(
@@ -88,6 +91,98 @@ def get_existing_role_or_none(
         return getattr(role_client, read_method)(role_name)
     except VaultSecretNotFoundError:
         return None
+
+
+def normalize_value(value: Any) -> Any:
+    """
+    Normalize a value for comparison by converting string numbers to integers.
+
+    This utility handles type mismatches between module parameters (always integers
+    due to Ansible validation) and Vault API responses (which may return integers
+    as strings). This ensures idempotent configuration comparisons.
+
+    Args:
+        value: The value to normalize (any type).
+
+    Returns:
+        Normalized value - integer if the input is a numeric string, otherwise
+        the original value unchanged.
+
+    Example:
+        >>> normalize_value("3600")
+        3600
+        >>> normalize_value(3600)
+        3600
+        >>> normalize_value("1h")
+        '1h'
+        >>> normalize_value(None)
+        None
+    """
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return value
+
+
+def compare_vault_configs(existing: Dict[str, Any], desired: Dict[str, Any]) -> bool:
+    """
+    Compare Vault configurations with support for type normalization and nested structures.
+
+    This function performs a semantic comparison of configurations, accounting for:
+    - Type differences (e.g., string "3600" vs int 3600 for TTL/rotation values)
+    - None values in desired config (treated as "don't care")
+    - Nested dict recursion (e.g., credential_config sub-dictionaries)
+    - List ordering preservation (e.g., SQL statements where order matters)
+
+    This unified function supports both dynamic and static database roles, as well as
+    any other Vault configuration comparisons requiring robust type handling.
+
+    Args:
+        existing: The current configuration from Vault.
+        desired: The desired configuration from module parameters.
+
+    Returns:
+        True if configurations match semantically, False otherwise.
+
+    Example:
+        >>> # Type normalization
+        >>> existing = {"default_ttl": "3600", "db_name": "mydb"}
+        >>> desired = {"default_ttl": 3600, "db_name": "mydb"}
+        >>> compare_vault_configs(existing, desired)
+        True
+
+        >>> # Nested dict comparison
+        >>> existing = {"credential_config": {"key_bits": 2048, "algorithm": "rsa"}}
+        >>> desired = {"credential_config": {"key_bits": 2048}}
+        >>> compare_vault_configs(existing, desired)
+        True
+    """
+    # If no existing config, it's definitely changed
+    if not existing:
+        return False
+
+    for key, desired_value in desired.items():
+        existing_value = existing.get(key)
+
+        # Skip None values - user doesn't care about this field
+        if desired_value is None:
+            continue
+
+        # Recursively compare nested dicts (e.g., credential_config)
+        if isinstance(desired_value, dict) and isinstance(existing_value, dict):
+            if not compare_vault_configs(existing_value, desired_value):
+                return False
+
+        # Preserve order for lists (e.g., SQL statements where order matters)
+        elif isinstance(desired_value, list) and isinstance(existing_value, list):
+            if desired_value != existing_value:
+                return False
+
+        # For primitives, normalize types (handle string/int mismatches)
+        else:
+            if normalize_value(existing_value) != normalize_value(desired_value):
+                return False
+
+    return True
 
 
 class VaultDatabaseParent:
@@ -582,4 +677,8 @@ __all__ = [
     'VaultDatabaseConnection',
     'VaultDatabaseStaticRoles',
     'VaultDatabaseDynamicRoles',
+    'build_config_params',
+    'get_existing_role_or_none',
+    'normalize_value',
+    'compare_vault_configs',
 ]

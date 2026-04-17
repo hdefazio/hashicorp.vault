@@ -134,7 +134,6 @@ data:
 """
 
 import copy
-from typing import Any, Dict
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -146,7 +145,8 @@ try:
     )
     from ansible_collections.hashicorp.vault.plugins.module_utils.vault_database import (
         VaultDatabaseDynamicRoles,
-        build_optional_params,
+        build_config_params,
+        compare_vault_configs,
         get_existing_role_or_none,
     )
     from ansible_collections.hashicorp.vault.plugins.module_utils.vault_exceptions import (
@@ -163,13 +163,11 @@ def ensure_role_present(module: AnsibleModule, db_roles: VaultDatabaseDynamicRol
     role_name = module.params['role_name']
 
     # Build configuration dict from module parameters
-    config = {
-        'db_name': module.params['db_name'],
-        'creation_statements': module.params['creation_statements'],
-    }
-
-    # Add optional parameters if provided
-    optional_params = [
+    # Note: db_name and creation_statements are required (enforced by required_if),
+    # so they are guaranteed to be non-None and will always be included
+    config_params = [
+        'db_name',
+        'creation_statements',
         'default_ttl',
         'max_ttl',
         'revocation_statements',
@@ -178,14 +176,14 @@ def ensure_role_present(module: AnsibleModule, db_roles: VaultDatabaseDynamicRol
         'credential_type',
         'credential_config',
     ]
-    config.update(build_optional_params(module.params, optional_params))
+    config = build_config_params(module.params, config_params)
 
     # Check if role already exists
     existing_role = get_existing_role_or_none(db_roles, role_name, 'read_dynamic_role')
 
     if existing_role:
         # Role exists - check if the configuration matches
-        if _role_config_matches(existing_role, config):
+        if compare_vault_configs(existing_role, config):
             # Role already exists with the same configuration - no changes needed
             module.exit_json(
                 changed=False,
@@ -230,55 +228,6 @@ def ensure_role_absent(module: AnsibleModule, db_roles: VaultDatabaseDynamicRole
     # Delete the role
     db_roles.delete_dynamic_role(role_name)
     module.exit_json(changed=changed, msg='Role deleted successfully', data={})
-
-
-def _normalize_value(value: Any) -> Any:
-    """
-    Normalize a value for comparison by converting string numbers to integers.
-
-    Args:
-        value: The value to normalize
-
-    Returns:
-        Normalized value (int if it's a numeric string, otherwise original value)
-    """
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return value
-
-
-def _role_config_matches(existing: Dict[str, Any], desired: Dict[str, Any]) -> bool:
-    """
-    Compare existing role configuration with desired configuration.
-
-    Args:
-        existing: The current role configuration from Vault
-        desired: The desired role configuration from module parameters
-
-    Returns:
-        bool: True if configurations match, False otherwise
-    """
-    # Check each key in desired config
-    for key, value in desired.items():
-        existing_value = existing.get(key)
-
-        # Handle None values - if desired is None, we don't care about existing value
-        if value is None:
-            continue
-
-        # For lists (e.g., SQL statements), compare directly to preserve order
-        # Order matters for SQL execution (e.g., CREATE USER before GRANT)
-        if isinstance(value, list) and isinstance(existing_value, list):
-            if value != existing_value:
-                return False
-        # For other types, normalize and compare to handle int/string differences
-        else:
-            normalized_existing = _normalize_value(existing_value)
-            normalized_desired = _normalize_value(value)
-            if normalized_existing != normalized_desired:
-                return False
-
-    return True
 
 
 def main():
