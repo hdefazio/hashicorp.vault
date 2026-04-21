@@ -67,7 +67,7 @@ namespaces:
       custom_metadata:
         team: "platform"
         environment: "prod"
-keys:
+namespaces_keys:
   description:
     - List of namespace paths returned by Vault when listing namespaces.
     - Only returned when O(path) is not specified (list operation).
@@ -78,7 +78,7 @@ keys:
     - "engineering/"
     - "finance/"
     - "operations/"
-key_info:
+namespaces_key_info:
   description:
     - Dictionary mapping namespace paths to their detailed information.
     - Each entry contains C(id), C(path), and C(custom_metadata) for the namespace.
@@ -160,11 +160,11 @@ def main():
             module.exit_json(
                 changed=False,
                 namespaces=namespaces,
-                key_info=key_info,
-                keys=keys,
+                namespaces_key_info=key_info,
+                namespaces_keys=keys,
             )
     except VaultSecretNotFoundError:
-        module.exit_json(changed=False, namespaces=[], keys=[], key_info={})
+        module.exit_json(changed=False, namespaces=[], namespaces_keys=[], namespaces_key_info={})
     except VaultPermissionError as e:
         module.fail_json(msg=f"Permission denied: {e}")
     except VaultApiError as e:

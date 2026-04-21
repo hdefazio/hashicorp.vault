@@ -78,13 +78,13 @@
               - (namespaces_before.namespaces | selectattr('id', 'defined') | list | length) == (namespaces_before.namespaces | length)
               - (namespaces_before.namespaces | selectattr('path', 'defined') | list | length) == (namespaces_before.namespaces | length)
               - (namespaces_before.namespaces | selectattr('custom_metadata', 'defined') | list | length) == (namespaces_before.namespaces | length)
-              - namespaces_before['keys'] is defined
-              - namespaces_before['keys'] is iterable
-              - namespaces_before.key_info is defined
-              - namespaces_before.key_info is mapping
+              - namespaces_before.namespaces_keys is defined
+              - namespaces_before.namespaces_keys is iterable
+              - namespaces_before.namespaces_key_info is defined
+              - namespaces_before.namespaces_key_info is mapping
               - namespaces_list_check.namespaces is defined
-              - namespaces_list_check['keys'] is defined
-              - namespaces_list_check.key_info is defined
+              - namespaces_list_check.namespaces_keys is defined
+              - namespaces_list_check.namespaces_key_info is defined
               - namespaces_list_check is not changed
 
         # CREATE
@@ -170,10 +170,10 @@
               - (namespaces_after_create.namespaces | selectattr('id', 'defined') | list | length) == (namespaces_after_create.namespaces | length)
               - (namespaces_after_create.namespaces | selectattr('path', 'defined') | list | length) == (namespaces_after_create.namespaces | length)
               - (namespaces_after_create.namespaces | selectattr('custom_metadata', 'defined') | list | length) == (namespaces_after_create.namespaces | length)
-              - namespaces_after_create['keys'] is defined
-              - namespaces_after_create['keys'] | length > 0
-              - namespaces_after_create.key_info is defined
-              - namespaces_after_create.key_info | length > 0
+              - namespaces_after_create.namespaces_keys is defined
+              - namespaces_after_create.namespaces_keys | length > 0
+              - namespaces_after_create.namespaces_key_info is defined
+              - namespaces_after_create.namespaces_key_info | length > 0
 
         - name: Find our test namespaces in list
           ansible.builtin.set_fact:
@@ -238,8 +238,8 @@
           ansible.builtin.assert:
             that:
               - namespaces_after_delete.namespaces is defined
-              - namespaces_after_delete['keys'] is defined
-              - namespaces_after_delete.key_info is defined
+              - namespaces_after_delete.namespaces_keys is defined
+              - namespaces_after_delete.namespaces_key_info is defined
               - found_deleted_ns_1 is none
               - found_deleted_ns_2 is none
 
